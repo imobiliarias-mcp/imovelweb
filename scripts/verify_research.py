@@ -43,6 +43,7 @@ def main() -> None:
         if sample_code is None:
             sample_code = listing.code()
         print(f"  [{i+1}] {listing.format_summary()}")
+        print(f"       Link: {listing.to_dictionary()['url']}")
     print("Result: Live rental search executed and verified successfully!\n")
 
     # 3. Live Property Detail Retrieval

@@ -46,14 +46,14 @@ class ImovelwebRentalProvider(RentalProviderProtocol):
         """Search rental listings using criteria."""
         search_url = self._builder.build_search_url(search_filter)
         html_content = self._transport.get_html(search_url)
-        parser = SearchResultParser()
+        parser = SearchResultParser(query_builder=self._builder)
         return parser.parse_search_response(html_content)
 
     def get_property_detail(self, code: PropertyCode) -> RentalPropertyDetail:
         """Retrieve full details for a single property by code."""
         detail_url = self._builder.build_property_detail_url(code)
         html_content = self._transport.get_html(detail_url)
-        parser = PropertyDetailParser()
+        parser = PropertyDetailParser(query_builder=self._builder)
         return parser.parse_detail_response(html_content)
 
     def get_facets(self) -> FacetCollection:

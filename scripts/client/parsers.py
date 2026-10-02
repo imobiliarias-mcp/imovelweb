@@ -1,8 +1,11 @@
 """Specialized HTML and data parsers for Imovelweb rental search."""
 
-import json
 import re
+
 from bs4 import BeautifulSoup
+
+from scripts.client.configuration import ImovelwebConfiguration
+from scripts.client.query_builder import ImovelwebQueryBuilder
 from scripts.domain.collections import (
     FacetCollection,
     FacetGroup,
@@ -18,6 +21,7 @@ from scripts.domain.entities import (
     ListingIdentity,
     ListingLocation,
     ListingMedia,
+    ListingNavigation,
     ListingPresentation,
     ListingSpecs,
     ListingValuation,
@@ -26,7 +30,7 @@ from scripts.domain.entities import (
     RentalListing,
     RentalPropertyDetail,
 )
-from scripts.domain.exceptions import PropertyNotFoundException
+from scripts.domain.exceptions import ParsingException, PropertyNotFoundException
 from scripts.domain.value_objects import ListingPrice, PropertyCode
 
 
@@ -64,13 +68,14 @@ class CardFieldExtractor:
         street = street_el.text.strip() if street_el else ""
         return ListingLocation(street=street, locality=locality)
 
-    def extract_media(self, card_soup: BeautifulSoup) -> ListingMedia:
-        """Extract thumbnail image and property relative URL."""
+    def extract_media(self, card_soup: BeautifulSoup, public_url: str) -> ListingMedia:
+        """Extract thumbnail and both public and legacy property links."""
         to_posting = card_soup.get("data-to-posting", "")
         img_el = card_soup.select_one("img[src*='avisos'], img[src*='imovelwebcdn']")
         thumb_url = img_el.get("src", "") if img_el else ""
         clean_path = to_posting.split("?")[0]
-        return ListingMedia(thumbnail_url=thumb_url, url_path=clean_path)
+        navigation = ListingNavigation(public_url=public_url, url_path=clean_path)
+        return ListingMedia(thumbnail_url=thumb_url, url_path=navigation)
 
     def extract_identity(self, card_soup: BeautifulSoup) -> ListingIdentity:
         """Extract listing code and public title."""
@@ -83,9 +88,20 @@ class CardFieldExtractor:
 class SearchResultParser:
     """Parses HTML search results into domain RentalSearchResult."""
 
-    def __init__(self) -> None:
-        """Initialize parser with field extractor collaborator."""
+    def __init__(self, query_builder: ImovelwebQueryBuilder | None = None) -> None:
+        """Initialize parser with field extraction and configured URL resolution."""
         self._extractor = CardFieldExtractor()
+        self._builder = query_builder or ImovelwebQueryBuilder(ImovelwebConfiguration())
+
+    def _extract_public_media(self, card: BeautifulSoup, code: PropertyCode) -> ListingMedia:
+        """Resolve the public link while retaining the original card path."""
+        raw_url = card.get("data-to-posting", "")
+        try:
+            public_url = self._builder.resolve_public_property_url(raw_url, code)
+        except ValueError as error:
+            message = f"Unable to resolve public URL for Imovelweb listing {code.value()}: {error}"
+            raise ParsingException(message) from error
+        return self._extractor.extract_media(card, public_url)
 
     def _parse_card(self, card: BeautifulSoup) -> RentalListing:
         """Convert a single DOM card into a RentalListing entity."""
@@ -97,7 +113,7 @@ class SearchResultParser:
         specs = self._extractor.extract_specs(card)
         location = self._extractor.extract_location(card)
         details = ListingDetails(specs=specs, location=location)
-        media = self._extractor.extract_media(card)
+        media = self._extract_public_media(card, identity.code)
         presentation = ListingPresentation(details=details, media=media)
         return RentalListing(core=core, presentation=presentation)
 
@@ -125,6 +141,21 @@ class SearchResultParser:
 
 class PropertyDetailParser:
     """Parses Imovelweb property detail page into RentalPropertyDetail."""
+
+    def __init__(self, query_builder: ImovelwebQueryBuilder | None = None) -> None:
+        """Initialize parser with the public portal URL configuration."""
+        self._builder = query_builder or ImovelwebQueryBuilder(ImovelwebConfiguration())
+
+    def _build_media(self, thumbnail: str, path: str, code: str) -> ListingMedia:
+        """Resolve detail navigation against the configured public portal."""
+        property_code = PropertyCode(code)
+        try:
+            public_url = self._builder.resolve_public_property_url(path, property_code)
+        except ValueError as error:
+            message = f"Unable to resolve public URL for Imovelweb listing {code}: {error}"
+            raise ParsingException(message) from error
+        navigation = ListingNavigation(public_url=public_url, url_path=path)
+        return ListingMedia(thumbnail_url=thumbnail, url_path=navigation)
 
     def _extract_id(self, html: str) -> str:
         """Extract posting ID from HTML script or meta."""
@@ -187,7 +218,8 @@ class PropertyDetailParser:
         thumb = pic_match.group(1) if pic_match else ""
         url_match = re.search(r"['\"]?url['\"]?\s*:\s*['\"](/propriedades/[^'\"]+)['\"]", html_content)
         rel_url = url_match.group(1) if url_match else ""
-        pres = ListingPresentation(details=details, media=ListingMedia(thumb, rel_url))
+        media = self._build_media(thumb, rel_url, code_str)
+        pres = ListingPresentation(details=details, media=media)
         listing = RentalListing(core=core, presentation=pres)
         desc = self._extract_description(html_content, soup)
         publisher = self._extract_publisher(html_content)

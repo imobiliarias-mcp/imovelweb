@@ -1,15 +1,8 @@
 """Unit tests for Imovelweb domain value objects, criteria, and entities."""
 
 import pytest
-from scripts.domain.criteria import (
-    LocationCriteria,
-    RentalFilter,
-    RentalSearchCriteria,
-    SearchBudget,
-    SearchConstraints,
-    SearchPagination,
-    SpecificationCriteria,
-)
+
+from scripts.domain.criteria import RentalFilter, SearchBudget
 from scripts.domain.entities import (
     DetailedProfile,
     ListingCore,
@@ -139,6 +132,17 @@ def test_rental_filter_builder_methods() -> None:
     assert with_sort.constraints.pagination.sort_order == "menor_preco"
 
 
+def test_listing_media_preserves_legacy_url_path_keyword() -> None:
+    """Keep the pre-existing named constructor argument source-compatible."""
+    media = ListingMedia(
+        thumbnail_url="https://img.example/1.jpg",
+        url_path="/propriedades/casa-1.html",
+    )
+
+    assert media.url_path == "/propriedades/casa-1.html"
+    assert media.url == "/propriedades/casa-1.html"
+
+
 def test_rental_listing_and_detail_formatting() -> None:
     """Ensure listing entities format readable summaries."""
     identity = ListingIdentity(PropertyCode("3037421600"), "Casa em Recanto Verde")
@@ -150,6 +154,8 @@ def test_rental_listing_and_detail_formatting() -> None:
     media = ListingMedia("https://img.example/1.jpg", "/propriedades/casa-1.html")
     presentation = ListingPresentation(details=details, media=media)
     listing = RentalListing(core=core, presentation=presentation)
+    with pytest.raises(ValueError, match="3037421600"):
+        listing.to_dictionary()
 
     summary = listing.format_summary()
     assert "[3037421600]" in summary

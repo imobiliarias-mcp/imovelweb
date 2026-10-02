@@ -25,6 +25,7 @@ search_result = provider.search_rentals(search_filter)
 print(f"Total found: {search_result.total_count()}")
 for listing in search_result.listings:
     print(listing.format_summary())
+    print(f"Link: {listing.to_dictionary()['url']}")
 ```
 
 ### Retrieve Property Detail

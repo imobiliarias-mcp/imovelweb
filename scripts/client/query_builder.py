@@ -1,6 +1,7 @@
 """URL and query builder for Imovelweb search routing."""
 
 import unicodedata
+from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 
 from scripts.client.configuration import ImovelwebConfiguration
 from scripts.domain.criteria import RentalFilter
@@ -76,6 +77,44 @@ class ImovelwebQueryBuilder:
         page_slug = search_filter.constraints.pagination.page_number.format_slug_part()
         full_slug = f"{prefix}{location_slug}{bed_slug}{sort_slug}{page_slug}.html"
         return f"{self._config.base_url}/{full_slug}"
+
+    def public_base_url(self) -> str:
+        """Return the configured public portal origin."""
+        return self._config.base_url
+
+    def resolve_public_property_url(self, url: str, code: PropertyCode) -> str:
+        """Resolve card links or the documented posting-code fallback."""
+        if not url.strip():
+            if code.value() == "0" or not code.value().isdigit():
+                raise ValueError(f"No public property URL or usable code for {code.value()}")
+            return self.build_property_detail_url(code)
+        resolved_url = urljoin(f"{self.public_base_url().rstrip('/')}/", url.strip())
+        self._validate_public_url(resolved_url)
+        return self._remove_tracking_parameters(resolved_url)
+
+    def _validate_public_url(self, url: str) -> None:
+        """Reject non-web URLs and hosts outside the configured public portal."""
+        parsed_url = urlsplit(url)
+        base_url = urlsplit(self.public_base_url())
+        valid_scheme = parsed_url.scheme in {"http", "https"}
+        same_host = self._normalize_host(parsed_url.hostname) == self._normalize_host(base_url.hostname)
+        is_property_route = parsed_url.path.startswith("/propriedades/")
+        is_html_page = parsed_url.path.endswith(".html")
+        if not valid_scheme or not parsed_url.hostname or not same_host:
+            raise ValueError(f"URL is not on the configured public host: {url}")
+        if not is_property_route or not is_html_page:
+            raise ValueError(f"URL is not a public property detail page: {url}")
+
+    def _normalize_host(self, hostname: str | None) -> str:
+        """Treat www and apex hostnames as the same configured portal."""
+        return (hostname or "").removeprefix("www.").lower()
+
+    def _remove_tracking_parameters(self, url: str) -> str:
+        """Drop known Imovelweb tracking keys while preserving property identifiers."""
+        parsed_url = urlsplit(url)
+        query = parse_qsl(parsed_url.query, keep_blank_values=True)
+        retained_query = [(key, value) for key, value in query if not key.startswith("n_")]
+        return urlunsplit(parsed_url._replace(query=urlencode(retained_query)))
 
     def build_property_detail_url(self, code: PropertyCode) -> str:
         """Construct direct generic property detail URL by code."""

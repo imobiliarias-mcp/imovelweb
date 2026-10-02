@@ -1,6 +1,8 @@
 """Domain entities for Imovelweb rental property listings."""
 
 from dataclasses import dataclass
+from urllib.parse import urlsplit
+
 from scripts.domain.value_objects import ListingPrice, PropertyCode
 
 
@@ -53,11 +55,44 @@ class ListingDetails:
 
 
 @dataclass(frozen=True)
+class ListingNavigation:
+    """Public property URL and its legacy relative path."""
+
+    public_url: str
+    url_path: str
+
+
+@dataclass(frozen=True, init=False)
 class ListingMedia:
-    """Primary image thumbnail and canonical relative URL path."""
+    """Thumbnail and navigation data, grouped to retain a two-field model."""
 
     thumbnail_url: str
-    url_path: str
+    navigation: ListingNavigation
+
+    def __init__(
+        self,
+        thumbnail_url: str,
+        url_path: ListingNavigation | str,
+        public_url: str | None = None,
+    ) -> None:
+        """Accept legacy url_path arguments or an explicit navigation bundle."""
+        navigation_data = url_path
+        if isinstance(url_path, str):
+            navigation_data = ListingNavigation(public_url or url_path, url_path)
+        object.__setattr__(self, "thumbnail_url", thumbnail_url)
+        object.__setattr__(self, "navigation", navigation_data)
+
+    @property
+    def url_path(self) -> str:
+        """Expose the preserved relative property path."""
+        navigation = self.navigation
+        return navigation.url_path
+
+    @property
+    def url(self) -> str:
+        """Expose the resolved public property URL."""
+        navigation = self.navigation
+        return navigation.public_url
 
 
 @dataclass(frozen=True)
@@ -91,20 +126,51 @@ class RentalListing:
         specs_str = self.presentation.details.specs.room_summary
         return f"[{code_str}] {loc_str} - {specs_str} - {price_str}/mês"
 
+    def _validated_public_url(self) -> str:
+        """Require an absolute web URL and include listing context on failure."""
+        presentation = self.presentation
+        media = presentation.media
+        public_url = media.url
+        return self._validate_absolute_public_url(public_url)
+
+    def _validate_absolute_public_url(self, public_url: str) -> str:
+        """Validate the scheme and host of a pre-resolved public URL."""
+        try:
+            parsed_url = urlsplit(public_url)
+        except ValueError as error:
+            raise self._public_url_error(public_url) from error
+        valid_scheme = parsed_url.scheme in {"http", "https"}
+        has_host = bool(parsed_url.hostname)
+        has_credentials = parsed_url.username is not None or parsed_url.password is not None
+        if not valid_scheme or not has_host or has_credentials:
+            raise self._public_url_error(public_url)
+        return public_url
+
+    def _public_url_error(self, public_url: str) -> ValueError:
+        """Build a contextual serialization error for this listing."""
+        code = self.code()
+        message = f"Imovelweb listing {code} requires an absolute public URL: {public_url}"
+        return ValueError(message)
+
     def to_dictionary(self) -> dict:
         """Export entity into a plain dictionary representation."""
+        presentation = self.presentation
+        media = presentation.media
+        navigation = media.navigation
+        public_url = self._validated_public_url()
         return {
             "code": self.core.identity.code.value(),
             "title": self.core.identity.title,
             "rental_price": self.core.valuation.rental_price.value(),
             "rental_price_formatted": self.core.valuation.rental_price.format_brl(),
             "expenses": self.core.valuation.expenses.value(),
-            "street": self.presentation.details.location.street,
-            "locality": self.presentation.details.location.locality,
-            "dimensions": self.presentation.details.specs.dimensions,
-            "room_summary": self.presentation.details.specs.room_summary,
-            "thumbnail_url": self.presentation.media.thumbnail_url,
-            "url_path": self.presentation.media.url_path,
+            "street": presentation.details.location.street,
+            "locality": presentation.details.location.locality,
+            "dimensions": presentation.details.specs.dimensions,
+            "room_summary": presentation.details.specs.room_summary,
+            "thumbnail_url": media.thumbnail_url,
+            "url_path": navigation.url_path,
+            "url": public_url,
         }
 
 

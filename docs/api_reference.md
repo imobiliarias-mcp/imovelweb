@@ -51,3 +51,5 @@ Canonical price-filter routing is not implemented. Nonzero `SearchBudget` bounds
 - **By ID**: `https://www.imovelweb.com.br/propriedades/imovel-{property_id}.html`
 - **Canonical**: `https://www.imovelweb.com.br/propriedades/{slug}-{property_id}.html`
 - Example: `https://www.imovelweb.com.br/propriedades/imovel-3037421600.html` redirects to `https://www.imovelweb.com.br/propriedades/casa-para-aluguel-em-recanto-verde-timoteo-3037421600.html`
+
+Search-result serialization retains the legacy `url_path` field and adds `url` as an absolute public property URL. Relative and protocol-relative card links are resolved against the configured Imovelweb base; `url_path` remains the original query-free path. The public URL keeps identifying query parameters and removes known `n_*` tracking parameters. Only same-host `/propriedades/*.html` links are accepted; when a card has no link, a numeric property code may use the documented generic detail route above. No extra detail request is made during search.

@@ -1,6 +1,5 @@
 """CLI runner for searching Imovelweb rental listings."""
 
-import sys
 from scripts.domain.criteria import RentalFilter
 from scripts.providers.imovelweb import ImovelwebRentalProvider
 
@@ -26,6 +25,7 @@ def main() -> None:
 
     for listing in search_result.listings:
         print(listing.format_summary())
+        print(f"Link: {listing.to_dictionary()['url']}")
 
 
 if __name__ == "__main__":
