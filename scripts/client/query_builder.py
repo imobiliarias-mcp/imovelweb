@@ -1,8 +1,10 @@
 """URL and query builder for Imovelweb search routing."""
 
 import unicodedata
+
 from scripts.client.configuration import ImovelwebConfiguration
 from scripts.domain.criteria import RentalFilter
+from scripts.domain.exceptions import InvalidFilterException
 from scripts.domain.value_objects import PropertyCode
 
 
@@ -50,8 +52,20 @@ class ImovelwebQueryBuilder:
         }
         return sort_slugs.get(sort_order.lower().strip(), "")
 
+    def _validate_supported_budget(self, search_filter: RentalFilter) -> None:
+        """Reject price bounds that cannot be encoded in supported routes."""
+        budget = search_filter.constraints.budget
+        minimum_price = budget.minimum_price
+        maximum_price = budget.maximum_price
+        if minimum_price.value() > 0 or maximum_price.value() > 0:
+            raise InvalidFilterException(
+                "Price bounds are not supported by canonical routes; "
+                "use an unbounded search and filter fetched rental prices explicitly."
+            )
+
     def build_search_url(self, search_filter: RentalFilter) -> str:
-        """Construct full canonical Imovelweb rental search URL."""
+        """Build a canonical search URL; reject unsupported price bounds."""
+        self._validate_supported_budget(search_filter)
         prop_type = search_filter.criteria.specifications.property_type
         city = search_filter.criteria.location.city
         nb = search_filter.criteria.location.neighborhood

@@ -30,6 +30,10 @@ https://www.imovelweb.com.br/imoveis-aluguel-timoteo-mg-desde-1-ate-2-quartos.ht
 - **Olaria**: `https://www.imovelweb.com.br/imoveis-aluguel-olaria-timoteo.html`
 - **Funcionários**: `https://www.imovelweb.com.br/imoveis-aluguel-funcionarios-timoteo.html`
 
+### Price Bounds in the Python Client
+
+Canonical price-filter routing is not implemented. Nonzero `SearchBudget` bounds (including `with_price_ceiling()`) raise `InvalidFilterException` instead of silently returning unfiltered results. Fetch an unbounded search, paginate through its results, and explicitly compare published rental prices to the desired interval. This restriction applies to the client, not to the portal's filter capabilities.
+
 ### Sorting Orders
 - **Lowest Price**: `https://www.imovelweb.com.br/imoveis-aluguel-timoteo-mg-ordem-preco-menor.html`
 - **Highest Price**: `https://www.imovelweb.com.br/imoveis-aluguel-timoteo-mg-ordem-preco-maior.html`
